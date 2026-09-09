@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sondages</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="navbar">
+    <a href="/" class="brand">🗳️ Sondages</a>
+    <nav>
+      <% if (currentUser) { %>
+        <a href="/polls/new">Créer un sondage</a>
+        <% if (currentUser.is_admin) { %>
+          <a href="/admin">Administration</a>
+        <% } %>
+        <span class="user-email"><%= currentUser.email %></span>
+        <form action="/logout" method="POST" style="display:inline">
+          <button type="submit" class="link-button">Déconnexion</button>
+        </form>
+      <% } else { %>
+        <a href="/login">Connexion</a>
+        <a href="/register">Inscription</a>
+      <% } %>
+    </nav>
+  </header>
+  <main class="container">

@@ -1,0 +1,43 @@
+<%- include('partials/head') %>
+
+<h1><%= poll.question %></h1>
+<p class="poll-meta">Créé par <%= poll.author %></p>
+
+<% if (currentUser && !userVote) { %>
+  <form method="POST" action="/polls/<%= poll.id %>/vote" class="form">
+    <% options.forEach(function(opt) { %>
+      <label class="option-radio">
+        <input type="radio" name="option_id" value="<%= opt.id %>" required>
+        <%= opt.text %>
+      </label>
+    <% }); %>
+    <button type="submit">Voter</button>
+  </form>
+<% } else if (!currentUser) { %>
+  <p><a href="/login">Connecte-toi</a> pour voter à ce sondage.</p>
+<% } %>
+
+<h2>Résultats (<%= totalVotes %> vote<%= totalVotes > 1 ? 's' : '' %>)</h2>
+<ul class="results">
+  <% options.forEach(function(opt) { %>
+    <% const pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0; %>
+    <li>
+      <div class="result-label">
+        <span><%= opt.text %></span>
+        <span><%= opt.votes %> vote(s) — <%= pct %>%</span>
+      </div>
+      <div class="bar-bg">
+        <div class="bar-fill" style="width: <%= pct %>%;"></div>
+      </div>
+    </li>
+  <% }); %>
+</ul>
+
+<% if (currentUser && currentUser.is_admin) { %>
+  <form method="POST" action="/admin/polls/<%= poll.id %>/delete"
+        onsubmit="return confirm('Supprimer définitivement ce sondage ?');">
+    <button type="submit" class="danger">Supprimer ce sondage (admin)</button>
+  </form>
+<% } %>
+
+<%- include('partials/foot') %>

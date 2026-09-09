@@ -1,0 +1,20 @@
+<%- include('partials/head') %>
+
+<h1>Tous les sondages</h1>
+
+<% if (polls.length === 0) { %>
+  <p>Aucun sondage pour l'instant. <a href="/polls/new">Crée le premier !</a></p>
+<% } else { %>
+  <ul class="poll-list">
+    <% polls.forEach(function(poll) { %>
+      <li class="poll-card">
+        <a href="/polls/<%= poll.id %>"><strong><%= poll.question %></strong></a>
+        <div class="poll-meta">
+          Par <%= poll.author %> · <%= poll.vote_count %> vote(s)
+        </div>
+      </li>
+    <% }); %>
+  </ul>
+<% } %>
+
+<%- include('partials/foot') %>

@@ -1,0 +1,39 @@
+<%- include('partials/head') %>
+
+<h1>Créer un sondage</h1>
+
+<% if (error) { %><p class="error"><%= error %></p><% } %>
+
+<form method="POST" action="/polls" class="form" id="poll-form">
+  <label>Question
+    <input type="text" name="question" required>
+  </label>
+
+  <div id="options-wrapper">
+    <label>Option 1
+      <input type="text" name="options" required>
+    </label>
+    <label>Option 2
+      <input type="text" name="options" required>
+    </label>
+  </div>
+
+  <button type="button" id="add-option">+ Ajouter une option</button>
+  <button type="submit">Créer le sondage</button>
+</form>
+
+<script>
+  document.getElementById('add-option').addEventListener('click', function () {
+    const wrapper = document.getElementById('options-wrapper');
+    const count = wrapper.querySelectorAll('input[name="options"]').length + 1;
+    const label = document.createElement('label');
+    label.textContent = 'Option ' + count;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'options';
+    label.appendChild(input);
+    wrapper.appendChild(label);
+  });
+</script>
+
+<%- include('partials/foot') %>

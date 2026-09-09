@@ -1,0 +1,18 @@
+{
+  "name": "sondage-app",
+  "version": "1.0.0",
+  "description": "Site de sondages avec administration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "init-admin": "node init-admin.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.0",
+    "express-session": "^1.18.0"
+  }
+}
