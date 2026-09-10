@@ -62,7 +62,7 @@ router.post('/polls', requireAuth, async (req, res, next) => {
     const pollId = info.lastInsertRowid;
 
     for (const opt of options) {
-      await db.run('INSERT INTO options (poll_id, text) VALUES (?, ?)',[pollId, opt]);
+      await db.run('INSERT INTO options (poll_id, text) VALUES (?, ?)', [pollId, opt]);
     }
 
     if (restricted) {
@@ -183,12 +183,16 @@ router.post('/polls/:id/vote', requireAuth, async (req, res, next) => {
     const option = await db.get('SELECT * FROM options WHERE id = ? AND poll_id = ?', [option_id, poll.id]);
     if (!option) return res.status(400).render('error', { message: 'Option invalide.' });
 
-    const already = await db.get('SELECT id FROM votes WHERE poll_id = ? AND user_id = ?', [
-      poll.id,
-      req.user.id,
-    ]);
-    if (already) {
-      return res.redirect(`/polls/${poll.id}`);
+    // Les administrateurs peuvent voter autant de fois qu'ils veulent ;
+    // les autres utilisateurs sont limités à un seul vote par sondage.
+    if (!req.user.is_admin) {
+      const already = await db.get('SELECT id FROM votes WHERE poll_id = ? AND user_id = ?', [
+        poll.id,
+        req.user.id,
+      ]);
+      if (already) {
+        return res.redirect(`/polls/${poll.id}`);
+      }
     }
 
     await db.run('INSERT INTO votes (poll_id, option_id, user_id) VALUES (?, ?, ?)', [
