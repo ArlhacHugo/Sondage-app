@@ -19,6 +19,24 @@
   </div>
 
   <button type="button" id="add-option">+ Ajouter une option</button>
+
+  <div class="restrict-block">
+    <label class="checkbox-row">
+      <input type="checkbox" name="restricted" id="restricted-check">
+      Restreindre ce sondage à une liste de personnes précises
+    </label>
+
+    <div id="emails-wrapper" style="display: none;">
+      <label>Emails autorisés à répondre (un par ligne, ou séparés par des virgules)
+        <textarea name="emails" rows="5" placeholder="alice@exemple.com&#10;bob@exemple.com"></textarea>
+      </label>
+      <p class="hint">
+        Seules les personnes ayant un compte avec l'un de ces emails pourront voter.
+        Les autres visiteurs verront le sondage mais ne pourront pas répondre.
+      </p>
+    </div>
+  </div>
+
   <button type="submit">Créer le sondage</button>
 </form>
 
@@ -33,6 +51,10 @@
     input.name = 'options';
     label.appendChild(input);
     wrapper.appendChild(label);
+  });
+
+  document.getElementById('restricted-check').addEventListener('change', function () {
+    document.getElementById('emails-wrapper').style.display = this.checked ? 'block' : 'none';
   });
 </script>
 
