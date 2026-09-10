@@ -62,7 +62,6 @@ async function initSchema() {
       option_id INTEGER NOT NULL,
       user_id INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(poll_id, user_id),
       FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE,
       FOREIGN KEY (option_id) REFERENCES options(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -85,6 +84,32 @@ async function initSchema() {
     await client.execute('ALTER TABLE polls ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0');
   } catch (err) {
     // La colonne existe déjà : rien à faire.
+  }
+
+  try {
+    const tableInfo = await client.execute(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='votes'"
+    );
+    const existingSql = tableInfo.rows[0] && tableInfo.rows[0].sql;
+    if (existingSql && existingSql.includes('UNIQUE')) {
+      await client.execute('ALTER TABLE votes RENAME TO votes_old');
+      await client.execute(`CREATE TABLE votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poll_id INTEGER NOT NULL,
+        option_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE,
+        FOREIGN KEY (option_id) REFERENCES options(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )`);
+      await client.execute(
+        'INSERT INTO votes (id, poll_id, option_id, user_id, created_at) SELECT id, poll_id, option_id, user_id, created_at FROM votes_old'
+      );
+      await client.execute('DROP TABLE votes_old');
+    }
+  } catch (err) {
+    // Migration best-effort : on ignore les erreurs.
   }
 }
 
