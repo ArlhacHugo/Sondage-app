@@ -6,7 +6,10 @@
   <% if (poll.restricted) { %> · <span class="badge-restricted">Sondage restreint</span><% } %>
 </p>
 
-<% if (currentUser && !userVote && allowedToVote) { %>
+<% if (currentUser && allowedToVote && (!userVote || currentUser.is_admin)) { %>
+  <% if (currentUser.is_admin && userVote) { %>
+    <p class="hint">En tant qu'administrateur, tu peux répondre plusieurs fois à ce sondage.</p>
+  <% } %>
   <form method="POST" action="/polls/<%= poll.id %>/vote" class="form">
     <% options.forEach(function(opt) { %>
       <label class="option-radio">
