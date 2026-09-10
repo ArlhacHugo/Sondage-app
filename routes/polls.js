@@ -62,4 +62,145 @@ router.post('/polls', requireAuth, async (req, res, next) => {
     const pollId = info.lastInsertRowid;
 
     for (const opt of options) {
-      await db.run('INSERT INTO options (poll_id, text) VALUES (?, ?)',
+      await db.run('INSERT INTO options (poll_id, text) VALUES (?, ?)',[pollId, opt]);
+    }
+
+    if (restricted) {
+      for (const email of uniqueEmails) {
+        await db.run('INSERT OR IGNORE INTO poll_voters_whitelist (poll_id, email) VALUES (?, ?)', [
+          pollId,
+          email,
+        ]);
+      }
+    }
+
+    res.redirect(`/polls/${pollId}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Affichage d'un sondage + résultats
+router.get('/polls/:id', async (req, res, next) => {
+  try {
+    const poll = await db.get(`
+      SELECT p.*, u.email AS author FROM polls p
+      JOIN users u ON u.id = p.created_by
+      WHERE p.id = ?
+    `, [req.params.id]);
+
+    if (!poll) return res.status(404).render('error', { message: 'Sondage introuvable.' });
+
+    const options = await db.all(`
+      SELECT o.id, o.text,
+        (SELECT COUNT(*) FROM votes v WHERE v.option_id = o.id) AS votes
+      FROM options o WHERE o.poll_id = ?
+    `, [poll.id]);
+
+    const totalVotes = options.reduce((sum, o) => sum + Number(o.votes), 0);
+
+    let userVote = null;
+    let allowedToVote = true;
+    if (req.user) {
+      userVote = await db.get('SELECT option_id FROM votes WHERE poll_id = ? AND user_id = ?', [
+        poll.id,
+        req.user.id,
+      ]);
+
+      if (poll.restricted) {
+        const whitelisted = await db.get(
+          'SELECT id FROM poll_voters_whitelist WHERE poll_id = ? AND email = ?',
+          [poll.id, req.user.email.toLowerCase()]
+        );
+        allowedToVote = Boolean(whitelisted);
+      }
+    } else if (poll.restricted) {
+      allowedToVote = false;
+    }
+
+    let respondents = null;
+    let notYetResponded = null;
+    const isOwnerOrAdmin = req.user && (req.user.id === poll.created_by || req.user.is_admin);
+
+    if (isOwnerOrAdmin) {
+      respondents = await db.all(`
+        SELECT u.email, o.text AS chosen_option, v.created_at
+        FROM votes v
+        JOIN users u ON u.id = v.user_id
+        JOIN options o ON o.id = v.option_id
+        WHERE v.poll_id = ?
+        ORDER BY v.created_at DESC
+      `, [poll.id]);
+
+      if (poll.restricted) {
+        notYetResponded = await db.all(`
+          SELECT w.email FROM poll_voters_whitelist w
+          WHERE w.poll_id = ?
+          AND w.email NOT IN (
+            SELECT u2.email FROM votes v2
+            JOIN users u2 ON u2.id = v2.user_id
+            WHERE v2.poll_id = ?
+          )
+          ORDER BY w.email
+        `, [poll.id, poll.id]);
+      }
+    }
+
+    res.render('poll_show', {
+      poll,
+      options,
+      totalVotes,
+      userVote,
+      allowedToVote,
+      respondents,
+      notYetResponded,
+      error: null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Voter
+router.post('/polls/:id/vote', requireAuth, async (req, res, next) => {
+  try {
+    const { option_id } = req.body;
+    const poll = await db.get('SELECT * FROM polls WHERE id = ?', [req.params.id]);
+    if (!poll) return res.status(404).render('error', { message: 'Sondage introuvable.' });
+
+    if (poll.restricted) {
+      const whitelisted = await db.get(
+        'SELECT id FROM poll_voters_whitelist WHERE poll_id = ? AND email = ?',
+        [poll.id, req.user.email.toLowerCase()]
+      );
+      if (!whitelisted) {
+        return res.status(403).render('error', {
+          message: "Ce sondage est réservé à une liste de personnes précises, et ton compte n'en fait pas partie.",
+        });
+      }
+    }
+
+    const option = await db.get('SELECT * FROM options WHERE id = ? AND poll_id = ?', [option_id, poll.id]);
+    if (!option) return res.status(400).render('error', { message: 'Option invalide.' });
+
+    const already = await db.get('SELECT id FROM votes WHERE poll_id = ? AND user_id = ?', [
+      poll.id,
+      req.user.id,
+    ]);
+    if (already) {
+      return res.redirect(`/polls/${poll.id}`);
+    }
+
+    await db.run('INSERT INTO votes (poll_id, option_id, user_id) VALUES (?, ?, ?)', [
+      poll.id,
+      option_id,
+      req.user.id,
+    ]);
+
+    res.redirect(`/polls/${poll.id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;
