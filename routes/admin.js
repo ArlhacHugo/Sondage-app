@@ -27,10 +27,12 @@ router.get('/admin', requireAdmin, async (req, res, next) => {
   }
 });
 
-// Le super-admin ajoute un nouvel administrateur (nouveau compte, ou promotion d'un compte existant)
+// Le super-admin ajoute un nouvel administrateur ou super-administrateur
+// (nouveau compte, ou promotion d'un compte existant)
 router.post('/admin/admins', requireSuperAdmin, async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const makeSuperAdmin = req.body.superadmin === 'on';
 
     if (!email) {
       const { users, polls } = await loadDashboardData();
@@ -41,7 +43,11 @@ router.post('/admin/admins', requireSuperAdmin, async (req, res, next) => {
     const existing = await db.get('SELECT id FROM users WHERE email = ?', [cleanEmail]);
 
     if (existing) {
-      await db.run('UPDATE users SET is_admin = 1 WHERE id = ?', [existing.id]);
+      if (makeSuperAdmin) {
+        await db.run('UPDATE users SET is_admin = 1, is_superadmin = 1 WHERE id = ?', [existing.id]);
+      } else {
+        await db.run('UPDATE users SET is_admin = 1 WHERE id = ?', [existing.id]);
+      }
     } else {
       if (!password || password.length < 8) {
         const { users, polls } = await loadDashboardData();
@@ -53,11 +59,19 @@ router.post('/admin/admins', requireSuperAdmin, async (req, res, next) => {
         });
       }
       const hash = await bcrypt.hash(password, 12);
-      await db.run('INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, 1)', [cleanEmail, hash]);
+      if (makeSuperAdmin) {
+        await db.run(
+          'INSERT INTO users (email, password_hash, is_admin, is_superadmin) VALUES (?, ?, 1, 1)',
+          [cleanEmail, hash]
+        );
+      } else {
+        await db.run('INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, 1)', [cleanEmail, hash]);
+      }
     }
 
     const { users, polls } = await loadDashboardData();
-    res.render('admin', { users, polls, error: null, success: `Administrateur ajouté : ${cleanEmail}` });
+    const label = makeSuperAdmin ? 'Super-administrateur' : 'Administrateur';
+    res.render('admin', { users, polls, error: null, success: `${label} ajouté : ${cleanEmail}` });
   } catch (err) {
     next(err);
   }
