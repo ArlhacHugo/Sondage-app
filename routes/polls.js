@@ -27,20 +27,35 @@ router.get('/polls/new', requireAuth, (req, res) => {
 
 router.post('/polls', requireAuth, async (req, res, next) => {
   try {
-    const { question } = req.body;
-    let options = req.body.options;
+    const title = req.body.question;
     const restricted = req.body.restricted === 'on';
     const emailsRaw = req.body.emails || '';
+    let questionsInput = req.body.questions;
 
-    if (!question || !question.trim()) {
-      return res.render('poll_new', { error: 'La question est obligatoire.' });
+    if (!title || !title.trim()) {
+      return res.render('poll_new', { error: 'Le titre du sondage est obligatoire.' });
     }
 
-    if (!Array.isArray(options)) options = [options];
-    options = options.map((o) => (o || '').trim()).filter(Boolean);
+    if (!questionsInput) questionsInput = [];
+    if (!Array.isArray(questionsInput)) questionsInput = Object.values(questionsInput);
 
-    if (options.length < 2) {
-      return res.render('poll_new', { error: 'Il faut au moins 2 options.' });
+    const cleanedQuestions = [];
+    for (const q of questionsInput) {
+      if (!q) continue;
+      const text = (q.text || '').trim();
+      let opts = q.options;
+      if (!opts) opts = [];
+      if (!Array.isArray(opts)) opts = Object.values(opts);
+      opts = opts.map((o) => (o || '').trim()).filter(Boolean);
+      if (text && opts.length >= 2) {
+        cleanedQuestions.push({ text, options: opts });
+      }
+    }
+
+    if (cleanedQuestions.length === 0) {
+      return res.render('poll_new', {
+        error: 'Ajoute au moins une question avec 2 options ou plus.',
+      });
     }
 
     const emails = emailsRaw
@@ -57,12 +72,21 @@ router.post('/polls', requireAuth, async (req, res, next) => {
 
     const info = await db.run(
       'INSERT INTO polls (question, created_by, restricted) VALUES (?, ?, ?)',
-      [question.trim(), req.user.id, restricted ? 1 : 0]
+      [title.trim(), req.user.id, restricted ? 1 : 0]
     );
     const pollId = info.lastInsertRowid;
 
-    for (const opt of options) {
-      await db.run('INSERT INTO options (poll_id, text) VALUES (?, ?)', [pollId, opt]);
+    let position = 0;
+    for (const q of cleanedQuestions) {
+      const qInfo = await db.run(
+        'INSERT INTO questions (poll_id, text, position) VALUES (?, ?, ?)',
+        [pollId, q.text, position]
+      );
+      const questionId = qInfo.lastInsertRowid;
+      for (const opt of q.options) {
+        await db.run('INSERT INTO options (question_id, text) VALUES (?, ?)', [questionId, opt]);
+      }
+      position += 1;
     }
 
     if (restricted) {
@@ -80,7 +104,7 @@ router.post('/polls', requireAuth, async (req, res, next) => {
   }
 });
 
-// Affichage d'un sondage + résultats
+// Affichage d'un sondage + résultats (une ou plusieurs questions)
 router.get('/polls/:id', async (req, res, next) => {
   try {
     const poll = await db.get(`
@@ -91,21 +115,25 @@ router.get('/polls/:id', async (req, res, next) => {
 
     if (!poll) return res.status(404).render('error', { message: 'Sondage introuvable.' });
 
-    const options = await db.all(`
-      SELECT o.id, o.text,
-        (SELECT COUNT(*) FROM votes v WHERE v.option_id = o.id) AS votes
-      FROM options o WHERE o.poll_id = ?
-    `, [poll.id]);
+    const questions = await db.all('SELECT * FROM questions WHERE poll_id = ? ORDER BY position, id', [poll.id]);
 
-    const totalVotes = options.reduce((sum, o) => sum + Number(o.votes), 0);
+    for (const q of questions) {
+      q.options = await db.all(`
+        SELECT o.id, o.text,
+          (SELECT COUNT(*) FROM votes v WHERE v.option_id = o.id) AS votes
+        FROM options o WHERE o.question_id = ?
+      `, [q.id]);
+      q.totalVotes = q.options.reduce((sum, o) => sum + Number(o.votes), 0);
+    }
 
-    let userVote = null;
     let allowedToVote = true;
+    let answeredQuestionIds = new Set();
     if (req.user) {
-      userVote = await db.get('SELECT option_id FROM votes WHERE poll_id = ? AND user_id = ?', [
+      const myVotes = await db.all('SELECT question_id FROM votes WHERE poll_id = ? AND user_id = ?', [
         poll.id,
         req.user.id,
       ]);
+      answeredQuestionIds = new Set(myVotes.map((v) => v.question_id));
 
       if (poll.restricted) {
         const whitelisted = await db.get(
@@ -118,18 +146,22 @@ router.get('/polls/:id', async (req, res, next) => {
       allowedToVote = false;
     }
 
+    for (const q of questions) {
+      q.userAnswered = answeredQuestionIds.has(q.id);
+    }
+
     let respondents = null;
     let notYetResponded = null;
     const isOwnerOrAdmin = req.user && (req.user.id === poll.created_by || req.user.is_admin);
 
     if (isOwnerOrAdmin) {
       respondents = await db.all(`
-        SELECT u.email, o.text AS chosen_option, v.created_at
+        SELECT u.email, COUNT(DISTINCT v.question_id) AS answered_count, MAX(v.created_at) AS last_answer
         FROM votes v
         JOIN users u ON u.id = v.user_id
-        JOIN options o ON o.id = v.option_id
         WHERE v.poll_id = ?
-        ORDER BY v.created_at DESC
+        GROUP BY u.email
+        ORDER BY last_answer DESC
       `, [poll.id]);
 
       if (poll.restricted) {
@@ -148,9 +180,7 @@ router.get('/polls/:id', async (req, res, next) => {
 
     res.render('poll_show', {
       poll,
-      options,
-      totalVotes,
-      userVote,
+      questions,
       allowedToVote,
       respondents,
       notYetResponded,
@@ -161,10 +191,9 @@ router.get('/polls/:id', async (req, res, next) => {
   }
 });
 
-// Voter
+// Voter (une ou plusieurs questions en une seule fois)
 router.post('/polls/:id/vote', requireAuth, async (req, res, next) => {
   try {
-    const { option_id } = req.body;
     const poll = await db.get('SELECT * FROM polls WHERE id = ?', [req.params.id]);
     if (!poll) return res.status(404).render('error', { message: 'Sondage introuvable.' });
 
@@ -180,26 +209,32 @@ router.post('/polls/:id/vote', requireAuth, async (req, res, next) => {
       }
     }
 
-    const option = await db.get('SELECT * FROM options WHERE id = ? AND poll_id = ?', [option_id, poll.id]);
-    if (!option) return res.status(400).render('error', { message: 'Option invalide.' });
+    const answers = req.body.answers || {};
+    const questions = await db.all('SELECT id FROM questions WHERE poll_id = ?', [poll.id]);
+    const validQuestionIds = new Set(questions.map((q) => q.id));
 
-    // Les administrateurs peuvent voter autant de fois qu'ils veulent ;
-    // les autres utilisateurs sont limités à un seul vote par sondage.
-    if (!req.user.is_admin) {
-      const already = await db.get('SELECT id FROM votes WHERE poll_id = ? AND user_id = ?', [
+    for (const [questionIdStr, optionId] of Object.entries(answers)) {
+      const questionId = Number(questionIdStr);
+      if (!validQuestionIds.has(questionId) || !optionId) continue;
+
+      const option = await db.get('SELECT * FROM options WHERE id = ? AND question_id = ?', [optionId, questionId]);
+      if (!option) continue;
+
+      if (!req.user.is_admin) {
+        const already = await db.get('SELECT id FROM votes WHERE question_id = ? AND user_id = ?', [
+          questionId,
+          req.user.id,
+        ]);
+        if (already) continue;
+      }
+
+      await db.run('INSERT INTO votes (poll_id, question_id, option_id, user_id) VALUES (?, ?, ?, ?)', [
         poll.id,
+        questionId,
+        optionId,
         req.user.id,
       ]);
-      if (already) {
-        return res.redirect(`/polls/${poll.id}`);
-      }
     }
-
-    await db.run('INSERT INTO votes (poll_id, option_id, user_id) VALUES (?, ?, ?)', [
-      poll.id,
-      option_id,
-      req.user.id,
-    ]);
 
     res.redirect(`/polls/${poll.id}`);
   } catch (err) {
