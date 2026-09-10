@@ -6,40 +6,54 @@
   <% if (poll.restricted) { %> · <span class="badge-restricted">Sondage restreint</span><% } %>
 </p>
 
-<% if (currentUser && allowedToVote && (!userVote || currentUser.is_admin)) { %>
-  <% if (currentUser.is_admin && userVote) { %>
-    <p class="hint">En tant qu'administrateur, tu peux répondre plusieurs fois à ce sondage.</p>
-  <% } %>
-  <form method="POST" action="/polls/<%= poll.id %>/vote" class="form">
-    <% options.forEach(function(opt) { %>
-      <label class="option-radio">
-        <input type="radio" name="option_id" value="<%= opt.id %>" required>
-        <%= opt.text %>
-      </label>
-    <% }); %>
-    <button type="submit">Voter</button>
-  </form>
-<% } else if (!currentUser) { %>
-  <p><a href="/login">Connecte-toi</a> pour voter à ce sondage.</p>
-<% } else if (currentUser && !userVote && !allowedToVote) { %>
+<% if (!currentUser) { %>
+  <p><a href="/login">Connecte-toi</a> pour répondre à ce sondage.</p>
+<% } else if (poll.restricted && !allowedToVote) { %>
   <p class="error">Ce sondage est réservé à une liste de personnes précises, et ton compte n'en fait pas partie.</p>
 <% } %>
 
-<h2>Résultats (<%= totalVotes %> vote<%= totalVotes > 1 ? 's' : '' %>)</h2>
-<ul class="results">
-  <% options.forEach(function(opt) { %>
-    <% const pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0; %>
-    <li>
-      <div class="result-label">
-        <span><%= opt.text %></span>
-        <span><%= opt.votes %> vote(s) — <%= pct %>%</span>
+<% if (currentUser && (!poll.restricted || allowedToVote)) { %>
+  <form method="POST" action="/polls/<%= poll.id %>/vote" class="form">
+    <% questions.forEach(function(q, qi) { %>
+      <div class="question-block">
+        <p class="question-block-title">Question <%= qi + 1 %> — <%= q.text %></p>
+        <% if (q.userAnswered && !currentUser.is_admin) { %>
+          <p class="hint">Tu as déjà répondu à cette question.</p>
+        <% } else { %>
+          <% if (q.userAnswered && currentUser.is_admin) { %>
+            <p class="hint">En tant qu'administrateur, tu peux répondre à nouveau.</p>
+          <% } %>
+          <% q.options.forEach(function(opt) { %>
+            <label class="option-radio">
+              <input type="radio" name="answers[<%= q.id %>]" value="<%= opt.id %>">
+              <%= opt.text %>
+            </label>
+          <% }); %>
+        <% } %>
       </div>
-      <div class="bar-bg">
-        <div class="bar-fill" style="width: <%= pct %>%;"></div>
-      </div>
-    </li>
-  <% }); %>
-</ul>
+    <% }); %>
+    <button type="submit">Envoyer mes réponses</button>
+  </form>
+<% } %>
+
+<% questions.forEach(function(q, qi) { %>
+  <h2>Résultats — Question <%= qi + 1 %> (<%= q.totalVotes %> vote<%= q.totalVotes > 1 ? 's' : '' %>)</h2>
+  <p class="poll-meta"><%= q.text %></p>
+  <ul class="results">
+    <% q.options.forEach(function(opt) { %>
+      <% const pct = q.totalVotes > 0 ? Math.round((opt.votes / q.totalVotes) * 100) : 0; %>
+      <li>
+        <div class="result-label">
+          <span><%= opt.text %></span>
+          <span><%= opt.votes %> vote(s) — <%= pct %>%</span>
+        </div>
+        <div class="bar-bg">
+          <div class="bar-fill" style="width: <%= pct %>%;"></div>
+        </div>
+      </li>
+    <% }); %>
+  </ul>
+<% }); %>
 
 <% if (respondents) { %>
   <section class="admin-section">
@@ -49,14 +63,14 @@
     <% } else { %>
       <table class="admin-table">
         <thead>
-          <tr><th>Email</th><th>Réponse</th><th>Date</th></tr>
+          <tr><th>Email</th><th>Questions répondues</th><th>Dernière réponse</th></tr>
         </thead>
         <tbody>
           <% respondents.forEach(function(r) { %>
             <tr>
               <td><%= r.email %></td>
-              <td><%= r.chosen_option %></td>
-              <td><%= r.created_at %></td>
+              <td><%= r.answered_count %> / <%= questions.length %></td>
+              <td><%= r.last_answer %></td>
             </tr>
           <% }); %>
         </tbody>
