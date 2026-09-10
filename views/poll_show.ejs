@@ -1,9 +1,12 @@
 <%- include('partials/head') %>
 
 <h1><%= poll.question %></h1>
-<p class="poll-meta">Créé par <%= poll.author %></p>
+<p class="poll-meta">
+  Créé par <%= poll.author %>
+  <% if (poll.restricted) { %> · <span class="badge-restricted">Sondage restreint</span><% } %>
+</p>
 
-<% if (currentUser && !userVote) { %>
+<% if (currentUser && !userVote && allowedToVote) { %>
   <form method="POST" action="/polls/<%= poll.id %>/vote" class="form">
     <% options.forEach(function(opt) { %>
       <label class="option-radio">
@@ -15,6 +18,8 @@
   </form>
 <% } else if (!currentUser) { %>
   <p><a href="/login">Connecte-toi</a> pour voter à ce sondage.</p>
+<% } else if (currentUser && !userVote && !allowedToVote) { %>
+  <p class="error">Ce sondage est réservé à une liste de personnes précises, et ton compte n'en fait pas partie.</p>
 <% } %>
 
 <h2>Résultats (<%= totalVotes %> vote<%= totalVotes > 1 ? 's' : '' %>)</h2>
@@ -32,6 +37,45 @@
     </li>
   <% }); %>
 </ul>
+
+<% if (respondents) { %>
+  <section class="admin-section">
+    <h2>Qui a répondu (<%= respondents.length %>)</h2>
+    <% if (respondents.length === 0) { %>
+      <p class="hint">Personne n'a encore répondu.</p>
+    <% } else { %>
+      <table class="admin-table">
+        <thead>
+          <tr><th>Email</th><th>Réponse</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+          <% respondents.forEach(function(r) { %>
+            <tr>
+              <td><%= r.email %></td>
+              <td><%= r.chosen_option %></td>
+              <td><%= r.created_at %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  </section>
+
+  <% if (notYetResponded) { %>
+    <section class="admin-section">
+      <h2>N'ont pas encore répondu (<%= notYetResponded.length %>)</h2>
+      <% if (notYetResponded.length === 0) { %>
+        <p class="hint">Tout le monde a répondu !</p>
+      <% } else { %>
+        <ul class="results">
+          <% notYetResponded.forEach(function(w) { %>
+            <li><%= w.email %></li>
+          <% }); %>
+        </ul>
+      <% } %>
+    </section>
+  <% } %>
+<% } %>
 
 <% if (currentUser && currentUser.is_admin) { %>
   <form method="POST" action="/admin/polls/<%= poll.id %>/delete"
