@@ -9,8 +9,8 @@
   <section class="admin-section">
     <h2>Ajouter un administrateur</h2>
     <p class="hint">
-      Si l'email correspond à un compte existant, il devient administrateur.
-      Sinon, un nouveau compte administrateur est créé avec le mot de passe indiqué.
+      Si l'email correspond à un compte existant, il devient administrateur (ou super-administrateur).
+      Sinon, un nouveau compte est créé avec le mot de passe indiqué.
     </p>
     <form method="POST" action="/admin/admins" class="form">
       <label>Email
@@ -19,7 +19,11 @@
       <label>Mot de passe (8 caractères min., ignoré si le compte existe déjà)
         <input type="password" name="password" minlength="8">
       </label>
-      <button type="submit">Ajouter comme administrateur</button>
+      <label class="checkbox-row">
+        <input type="checkbox" name="superadmin">
+        En faire un super-administrateur (peut lui-même ajouter d'autres admins)
+      </label>
+      <button type="submit">Ajouter</button>
     </form>
   </section>
 <% } %>
